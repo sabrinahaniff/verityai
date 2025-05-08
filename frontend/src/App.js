@@ -1,59 +1,98 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
-function App() {
-  const [transcription, setTranscription] = useState("");
-  const [status, setStatus] = useState("Connecting to WebSocket...");
-  const [ws, setWs] = useState(null);
+const TEXT_ANALYZE_ENDPOINT = "http://127.0.0.1:5001/analyze_sentiment";
+const AUDIO_ANALYZE_ENDPOINT = "http://127.0.0.1:5002/analyze";
 
-  useEffect(() => {
-    const websocket = new WebSocket("ws://localhost:8765");
-    setWs(websocket);
+const App = () => {
+  const [text, setText] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const [sentimentResult, setSentimentResult] = useState("");
+  const [error, setError] = useState("");
+  const [file, setFile] = useState(null);
 
-    websocket.onopen = () => {
-      setStatus("Connected to WebSocket");
-    };
+  const handleFileChange = (event) => {
+    setFile(event.target.files[0]);
+  };
 
-    websocket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setTranscription(data.transcription);
-    };
+  const analyzeText = async () => {
+    try {
+      const response = await fetch(TEXT_ANALYZE_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      });
 
-    websocket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setStatus("WebSocket Error");
-    };
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
 
-    websocket.onclose = () => {
-      setStatus("WebSocket Connection Closed");
-    };
-
-    return () => {
-      websocket.close();
-    };
-  }, []);
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0];
-    if (file && ws && ws.readyState === WebSocket.OPEN) {
-      const arrayBuffer = await file.arrayBuffer();
-      ws.send(arrayBuffer);
+      const data = await response.json();
+      setSentimentResult(`Sentiment: ${data.sentiment} | Score: ${data.score.toFixed(2)}`);
+      setError("");
+    } catch (err) {
+      setError(`Error: ${err.message}`);
+      setSentimentResult("");
     }
   };
 
+  const analyzeFile = async () => {
+    const formData = new FormData();
+    formData.append("file", file);
+  
+    try {
+      const response = await fetch(AUDIO_ANALYZE_ENDPOINT, {
+        method: "POST",
+        body: formData,
+      });
+  
+      console.log("Response Status:", response.status);
+  
+      if (!response.ok) {
+        throw new Error(`Error: ${response.statusText}`);
+      }
+  
+      const data = await response.json();
+      console.log("Response Data:", data);
+  
+      setTranscript(`Transcript: ${data.transcription}`);
+      setSentimentResult(`Sentiment: ${data.sentiment} | Score: ${data.score.toFixed(2)}`);
+      setError("");
+    } catch (err) {
+      console.error("Error:", err.message);
+      setError(`Error: ${err.message}`);
+      setTranscript("");
+      setSentimentResult("");
+    }
+  };
+  
   return (
-    <div className="App p-4">
-      <h1 className="text-xl font-bold mb-4">Real-Time Transcription</h1>
-      <p className="mb-2 text-gray-500">{status}</p>
+    <div style={{ padding: "20px" }}>
+      <h1>Sentiment Analysis</h1>
 
-      <div className="mb-4">
-        <input type="file" accept="audio/*" onChange={handleFileUpload} />
-      </div>
+      <textarea
+        placeholder="Enter text to analyze..."
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        style={{ width: "100%", height: "100px", marginBottom: "10px" }}
+      />
+      <button onClick={analyzeText}>Analyze Text</button>
 
-      <div className="bg-gray-100 p-4 rounded-xl shadow-md">
-        <p>{transcription || "Waiting for transcription..."}</p>
-      </div>
+      <br />
+
+      <input type="file" onChange={handleFileChange} style={{ marginBottom: "10px" }} />
+      <button onClick={analyzeFile}>Analyze Audio</button>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      <h2>Transcript:</h2>
+      <p>{transcript}</p>
+
+      <h2>Sentiment:</h2>
+      <p>{sentimentResult}</p>
     </div>
   );
-}
+};
 
 export default App;

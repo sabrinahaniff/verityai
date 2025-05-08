@@ -1,46 +1,37 @@
-import asyncio
-import websockets
-import json
-import whisper
+from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename
 import os
+from audio_processing import transcribe_audio
+from flask_cors import CORS
 
-# WebSocket Server Settings
-HOST = "localhost"
-PORT = 8765
 
-# Load Whisper model
-model = whisper.load_model("base")
+app = Flask(__name__)
+CORS(app)
+UPLOAD_FOLDER = './uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-async def handler(websocket):
-    print("Client connected")
+@app.route('/analyze', methods=['POST'])
+def analyze_audio():
     try:
-        while True:
-            # Receive audio data as bytes
-            audio_data = await websocket.recv()
-            temp_file = "temp.wav"
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
 
-            # Write audio data to temporary file
-            with open(temp_file, "wb") as f:
-                f.write(audio_data)
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'Empty file'}), 400
 
-            # Transcribe audio
-            result = model.transcribe(temp_file)
-            transcription = result.get("text", "")
-            os.remove(temp_file)  # Clean up temp file
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(file_path)
 
-            # Send transcription to frontend
-            response = json.dumps({"transcription": transcription})
-            await websocket.send(response)
+        # Transcribe the audio
+        transcription = transcribe_audio(file_path)
+        os.remove(file_path)
 
-    except websockets.ConnectionClosedError:
-        print("Client disconnected")
+        return jsonify({'transcription': transcription, 'sentiment': 'N/A', 'score': 0.0})
+
     except Exception as e:
-        print(f"Error: {e}")
-
-async def main():
-    print(f"Starting server at ws://{HOST}:{PORT}")
-    async with websockets.serve(handler, HOST, PORT):
-        await asyncio.Future()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    app.run(host="0.0.0.0", port=5002)
